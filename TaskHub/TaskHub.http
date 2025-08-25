@@ -1,0 +1,188 @@
+@host = http://localhost:5097
+@api = {{host}}/api/v1
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjNkMjdiZC1kZTg5LTQzYTktOWM2ZC0wYjA3OWY1ZTgzZjIiLCJlbWFpbCI6InVzZXJAZXhhbXBsZS5jb20iLCJuYW1lIjoiVXN1w6FyaW8gUGFkcsOjbyIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6ImFkbWluIiwibmJmIjoxNzU2MTU4MzIzLCJleHAiOjE3NTYxNjU1MjMsImlzcyI6InRhc2todWIiLCJhdWQiOiJ0YXNraHViX2FwaSJ9.2Lh_q6tb1atnnrdUHTAAVT4H9hOK5Y-U3nyR2pHdZZA
+
+### Registrar novo usuário (admin)
+# Registrar novo usuário (padrão)
+# Ajuste email/senha/nome conforme necessário
+POST {{api}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "name": "Usuário Admin",
+  "password": "123456",
+  "asAdmin": true
+}
+
+> {%
+    // Tenta extrair token do registro (caso a API já retorne AuthResponse)
+    const b = response.body || {};
+    const token = b.token || b.access_token || b.accessToken || b.jwt || "";
+    if (token) {
+        client.global.set("token", token);
+        client.log("Token (usuário) salvo em {{token}}");
+    } else {
+        client.log("Registro concluído. Se não houver token na resposta, faça login no bloco seguinte.");
+    }
+%}
+
+### login admin
+# Login (admin) - necessário para DELETE board
+# Ajuste para as credenciais de um usuário com role admin
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "123456"
+}
+
+> {%
+    // Salva um token separado para o admin
+    const b = response.body || {};
+    const token = b.token || b.access_token || b.accessToken || b.jwt || "";
+    if (token) {
+        client.global.set("token", token);
+        client.log("Token admin salvo em {{token}}");
+    } else {
+        client.log("Não foi possível extrair o token admin automaticamente. Copie manualmente para {{token}} se necessário.");
+    }
+%}
+
+
+### Listar usuarios 
+# Listar usuarios 
+GET {{api}}/users/
+Authorization: Bearer {{token}}
+
+###
+# Criar um board
+POST {{api}}/boards/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Meu Board de Teste",
+  "description": "Descrição do board de teste"
+}
+
+> {%
+    // Captura o boardId retornado (considerando resposta do tipo BoardResponse)
+    const b = response.body || {};
+    if (b && b.id) {
+        client.global.set("boardId", b.id);
+        client.log(`boardId salvo: ${b.id}`);
+    } else {
+        // Caso a API retorne envolto em "data" ou similar (ajuste se necessário)
+        const id = (b.data && b.data.id) ? b.data.id : null;
+        if (id) {
+            client.global.set("boardId", id);
+            client.log(`boardId salvo (via data.id): ${id}`);
+        } else {
+            client.log("Não foi possível extrair boardId automaticamente.");
+        }
+    }
+%}
+
+###
+# Listar boards do usuário autenticado
+GET {{api}}/boards/
+Authorization: Bearer {{token}}
+
+###
+# Obter detalhes do board (inclui colunas e cards)
+GET {{api}}/boards/{{boardId}}
+Authorization: Bearer {{token}}
+
+###
+# Atualizar board
+PUT {{api}}/boards/{{boardId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Meu Board de Teste (Atualizado)",
+  "description": "Descrição atualizada"
+}
+
+###
+# Criar coluna no board
+POST {{api}}/boards/{{boardId}}/columns
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "A Fazer",
+  "order": 1
+}
+
+> {%
+    // Captura columnId
+    const c = response.body || {};
+    if (c && c.id) {
+        client.global.set("columnId", c.id);
+        client.log(`columnId salvo: ${c.id}`);
+    } else {
+        client.log("Não foi possível extrair columnId automaticamente.");
+    }
+%}
+
+###
+# Criar card na coluna
+POST {{api}}/boards/{{boardId}}/columns/{{columnId}}/cards
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Primeira tarefa",
+  "description": "Detalhes da tarefa",
+  "dueDate": "2025-12-31T23:59:59Z",
+  "assigneeId": null
+}
+
+> {%
+    // Captura cardId
+    const card = response.body || {};
+    if (card && card.id) {
+        client.global.set("cardId", card.id);
+        client.log(`cardId salvo: ${card.id}`);
+    } else {
+        client.log("Não foi possível extrair cardId automaticamente.");
+    }
+%}
+
+###
+# Comentar o card
+POST {{api}}/boards/{{boardId}}/cards/{{cardId}}/comments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "text": "Este é um comentário de teste"
+}
+
+###
+# (Opcional) Criar segunda coluna e mais um card, se desejar
+POST {{api}}/boards/{{boardId}}/columns
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Em Progresso"
+}
+
+###
+# Re-listar boards (verificar atualizações)
+GET {{api}}/boards/
+Authorization: Bearer {{token}}
+
+###
+# Obter detalhes do board novamente
+GET {{api}}/boards/{{boardId}}
+Authorization: Bearer {{token}}
+
+###
+# Remover board (somente admin)
+DELETE {{api}}/boards/{{boardId}}
+Authorization: Bearer {{adminToken}}
